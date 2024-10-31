@@ -1,4 +1,5 @@
 import os
+import re
 import pandas as pd
 from utils.helpers import *
 
@@ -191,6 +192,160 @@ class NFLDataLoader:
             logger.error(f"Error retrieving game play data for gameId {game_id} and playId {play_id}: {e}")
             raise
 
+    def name_match(self, display_name, receiver_name):
+        """
+        Compares a display name and a receiver name to check if they refer to the same person.
+        
+        The function extracts the first initial and the last name from both names, normalizes them by 
+        removing any non-alphabetic characters, and checks if they match. It is useful for matching 
+        player names in sports analytics or similar applications.
+
+        Parameters:
+        - display_name (str): The name displayed, typically in "First Last" format.
+        - receiver_name (str): The name of the receiver, typically in "F.Last" format (first initial followed by last name).
+
+        Returns:
+        - bool: True if the names match based on the first initial and last name; False otherwise.
+        """
+
+        if pd.isna(display_name) or pd.isna(receiver_name):
+            return False
+        
+        display_parts = display_name.split()
+        receiver_parts = receiver_name.split('.')
+        
+        display_initial = display_parts[0][0].lower()  # First initial in displayName
+        receiver_initial = receiver_parts[0][0].lower()  # First initial in receiver_name
+        
+        # Combine remaining parts and normalize by removing punctuation and converting to lowercase
+        display_last = re.sub(r'[^a-zA-Z]', '', ''.join(display_parts[1:])).lower()
+        receiver_last = re.sub(r'[^a-zA-Z]', '', ''.join(receiver_parts[1:])).lower()
+        
+        return display_initial == receiver_initial and display_last == receiver_last
+    
+    def weekly_offense_pass_analysis(self, df):
+        """
+        Performs weekly pass analysis and returns relevant DataFrames.
+        
+        Parameters:
+            df (pd.DataFrame): The input DataFrame containing play data.
+        
+        Returns:
+            tuple: A tuple containing two DataFrames: weekly route analysis and weekly passer-receiver analysis.
+        """
+        # Code 1
+        temp_pass = df[['gameId', 'playId','season', 'week', 'play_type', 'passer_player_name', 
+                        'receiver_player_name', 'passResult', 'displayName', 'routeRan']].drop_duplicates().reset_index(drop=True)
+        route_counts = temp_pass.groupby(['season','week', 'displayName', 'routeRan']).size().reset_index(name='route_count')
+        route_counts['total_routes'] = route_counts.groupby(['season','week', 'displayName'])['route_count'].transform('sum')
+        route_counts['route %'] = (route_counts['route_count'] / route_counts['total_routes'] * 100).round(2)
+        temp_pass['is_match'] = temp_pass.apply(lambda row: self.name_match(row['displayName'], row['receiver_player_name']), axis=1)
+        matched_temp_pass = temp_pass[temp_pass['is_match']]
+        pass_result_counts = matched_temp_pass.groupby(['season','week', 'displayName', 'routeRan', 'passResult']).size().unstack(fill_value=0).reset_index()
+
+        expected_pass_results = ['C', 'I', 'IN', 'R', 'S']
+        for col in expected_pass_results:
+            if col not in pass_result_counts:
+                pass_result_counts[col] = 0
+
+        pass_result_counts['total_passes'] = pass_result_counts.groupby(['season','week', 'displayName'])[expected_pass_results].transform('sum').sum(axis=1)
+
+        for col in expected_pass_results:
+            pass_result_counts[f'{col} %'] = (pass_result_counts[col] / pass_result_counts['total_passes'] * 100).fillna(0).round(2)
+
+        merged_route_pass_result_df = pd.merge(route_counts, pass_result_counts, on=['season','week', 'displayName', 'routeRan'], how='left')
+        merged_route_pass_result_df.fillna(0, inplace=True)
+
+        # Code 2
+        temp_pass = df[['gameId', 'playId','season', 'week', 'play_type', 'passer_player_name', 'pass_location', 'receiver_player_name', 'passResult']].drop_duplicates().reset_index(drop=True)
+        pass_df = temp_pass[temp_pass['play_type'] == 'pass']
+        pass_counts = pass_df.groupby(['season','week', 'passer_player_name', 'receiver_player_name', 'pass_location', 'passResult']).size().reset_index(name='pass_count')
+        result_counts = pass_df.groupby(['season','week', 'passer_player_name', 'receiver_player_name', 'passResult']).size().unstack(fill_value=0).reset_index()
+        merged_pass_receiver_df = pd.merge(pass_counts, result_counts, on=['season','week', 'passer_player_name', 'receiver_player_name'], how='left')
+        merged_pass_receiver_df['total_passes'] = merged_pass_receiver_df.groupby(['season','week', 'passer_player_name', 'receiver_player_name'])['pass_count'].transform('sum')
+
+        for result_type in ['C', 'I', 'S', 'IN', 'R']:
+            if result_type in merged_pass_receiver_df.columns:
+                merged_pass_receiver_df[f'{result_type} %'] = (merged_pass_receiver_df[result_type] / merged_pass_receiver_df['total_passes'] * 100).round(2).fillna(0)
+            else:
+                merged_pass_receiver_df[f'{result_type} %'] = 0.00
+
+        for location in merged_pass_receiver_df['pass_location'].unique():
+            mask = merged_pass_receiver_df['pass_location'] == location
+            merged_pass_receiver_df[f'{location} %'] = (merged_pass_receiver_df.loc[mask, 'pass_count'] / merged_pass_receiver_df['total_passes'] * 100).round(2)
+
+        for result_type in ['C', 'I', 'S', 'IN', 'R']:
+            for location in merged_pass_receiver_df['pass_location'].unique():
+                column_name = f'{result_type} {location} %'
+                mask = (merged_pass_receiver_df['passResult'] == result_type) & (merged_pass_receiver_df['pass_location'] == location)
+                merged_pass_receiver_df[column_name] = (merged_pass_receiver_df.loc[mask, 'pass_count'] / merged_pass_receiver_df['total_passes'] * 100).round(2).fillna(0)
+
+        merged_pass_receiver_df.fillna(0, inplace=True)
+
+        return merged_route_pass_result_df, merged_pass_receiver_df
+
+    def offense_pass_analysis(self, df):
+        """
+        Performs pass analysis and returns relevant DataFrames.
+        
+        Parameters:
+            df (pd.DataFrame): The input DataFrame containing play data.
+        
+        Returns:
+            tuple: A tuple containing two DataFrames: route analysis and passer-receiver analysis.
+        """
+        # Code 1
+        temp_pass = df[['gameId', 'playId','play_type', 'passer_player_name', 
+                            'receiver_player_name', 'passResult', 
+                            'displayName', 'routeRan']].drop_duplicates().reset_index(drop=True)
+
+        route_counts = temp_pass.groupby(['displayName', 'routeRan']).size().reset_index(name='route_count')
+        total_routes = route_counts.groupby('displayName')['route_count'].transform('sum')
+        route_counts['route %'] = (route_counts['route_count'] / total_routes * 100).round(2)
+        temp_pass['is_match'] = temp_pass.apply(lambda row: self.name_match(row['displayName'], row['receiver_player_name']), axis=1)
+        matched_temp_pass = temp_pass[temp_pass['is_match']]
+        pass_result_counts = matched_temp_pass.groupby(['displayName', 'routeRan', 'passResult']).size().unstack(fill_value=0).reset_index()
+
+        expected_pass_results = ['C', 'I', 'IN', 'R', 'S']
+        for col in expected_pass_results:
+            if col not in pass_result_counts:
+                pass_result_counts[col] = 0
+
+        pass_result_counts['total_passes'] = pass_result_counts.groupby(['displayName'])[expected_pass_results].transform('sum').sum(axis=1)
+
+        for col in expected_pass_results:
+            pass_result_counts[f'{col} %'] = (pass_result_counts[col] / pass_result_counts['total_passes'] * 100).fillna(0).round(2)
+
+        merged_route_pass_result_df = pd.merge(route_counts, pass_result_counts, on=['displayName', 'routeRan'], how='left')
+        merged_route_pass_result_df.fillna(0, inplace=True)
+
+        # Code 2
+        temp_pass = df[['gameId', 'playId','play_type', 'passer_player_name', 'pass_location', 'receiver_player_name', 'passResult']].drop_duplicates().reset_index(drop=True)
+        pass_df = temp_pass[temp_pass['play_type'] == 'pass']
+        pass_counts = pass_df.groupby(['passer_player_name', 'receiver_player_name', 'pass_location','passResult']).size().reset_index(name='pass_count')
+        result_counts = pass_df.groupby(['passer_player_name', 'receiver_player_name', 'passResult']).size().unstack(fill_value=0).reset_index()
+        merged_pass_receiver_df = pd.merge(pass_counts, result_counts, on=['passer_player_name', 'receiver_player_name'], how='left')
+        merged_pass_receiver_df['total_passes'] = merged_pass_receiver_df.groupby(['passer_player_name', 'receiver_player_name'])['pass_count'].transform('sum')
+
+        for result_type in ['C', 'I', 'S', 'IN', 'R']:
+            if result_type in merged_pass_receiver_df.columns:
+                merged_pass_receiver_df[f'{result_type} %'] = (merged_pass_receiver_df[result_type] / merged_pass_receiver_df['total_passes'] * 100).round(2).fillna(0)
+            else:
+                merged_pass_receiver_df[f'{result_type} %'] = 0.00
+
+        for location in merged_pass_receiver_df['pass_location'].unique():
+            merged_pass_receiver_df[f'{location} %'] = (merged_pass_receiver_df.loc[merged_pass_receiver_df['pass_location'] == location, 'pass_count'] / merged_pass_receiver_df['total_passes'] * 100).round(2)
+
+        for result_type in ['C', 'I', 'S', 'IN', 'R']:
+            for location in merged_pass_receiver_df['pass_location'].unique():
+                column_name = f'{result_type} {location} %'
+                mask = (merged_pass_receiver_df['passResult'] == result_type) & (merged_pass_receiver_df['pass_location'] == location)
+                merged_pass_receiver_df[column_name] = (merged_pass_receiver_df.loc[mask, 'pass_count'] / merged_pass_receiver_df['total_passes'] * 100).round(2).fillna(0)
+
+        merged_pass_receiver_df.fillna(0, inplace=True)
+
+        return merged_route_pass_result_df, merged_pass_receiver_df
+
     def get_possession_team_data(self, possession_team, save=True):
         """
         Retrieves and optionally saves data for the possession team.
@@ -250,19 +405,76 @@ class NFLDataLoader:
                 error_msg = f"No tracking data found for possession team '{possession_team}'."
                 logger.warning(error_msg)
                 raise ValueError(error_msg)
+            
+            # Load new data with selected columns
+            columns_to_select = [
+                'old_game_id', 'play_id', 'game_half', 'play_type', 'pass_location', 
+                'pass_length', 'run_location', 'run_gap', 'first_down_rush', 
+                'first_down_pass', 'first_down_penalty', 'third_down_converted', 
+                'third_down_failed', 'fourth_down_converted', 'fourth_down_failed', 
+                'rush_attempt', 'pass_attempt', 'lateral_reception', 'lateral_rush', 
+                'passer_player_name', 'receiver_player_name', 'rusher_player_name', 
+                'receiving_yards', 'rushing_yards', 'interception_player_name', 
+                'tackle_for_loss_1_player_name', 'tackle_for_loss_2_player_name',
+                'qb_hit_1_player_name', 'qb_hit_2_player_name', 
+                'solo_tackle_1_player_name', 'assist_tackle_1_player_name', 
+                'assist_tackle_2_player_name', 'tackle_with_assist', 
+                'tackle_with_assist_1_player_name', 'tackle_with_assist_2_player_name', 
+                'play_type_nfl', 'passer', 'rusher', 'receiver'
+            ]
+
+            df = pd.read_csv("assets/nflverse/pbp_2022.csv", usecols=columns_to_select, low_memory=False)
+            logger.info("Loaded new data from pbp_2022.csv")
+
+            # Merge with full_merged_data
+            final_merged_df = pd.merge(
+                full_merged_data,
+                df,
+                left_on=['gameId', 'playId'],  
+                right_on=['old_game_id', 'play_id'], 
+                how='left'
+            )
+            logger.info("Merged possession team data with new data.")
+
+            # Perform Weekly Pass Analysis
+            logger.info(f"Performing Weekly Pass Analysis for {possession_team}")
+            weekly_route_analysis_df, weekly_pass_receiver_analysis_df = self.weekly_offense_pass_analysis(final_merged_df)
+            logger.info(f"Weekly Pass Analysis Done for {possession_team}")
+
+            # Perform Pass Analysis
+            logger.info(f"Performing Pass Analysis for {possession_team}")
+            route_analysis_df, pass_receiver_analysis_df = self.offense_pass_analysis(final_merged_df)
+            logger.info(f"Pass Analysis Done for {possession_team}")
 
             if save:
                 try:
-                    dir_name = f"{possession_team}_offense_data"
-                    os.makedirs(self.save_offense_path, exist_ok=True)
-                    file_path = os.path.join(self.save_offense_path, f"{dir_name}.csv")
-                    full_merged_data.to_csv(file_path, index=False)
-                    logger.info(f"Data for possession team '{possession_team}' saved to '{file_path}'.")
-                except Exception as e:
-                    logger.error(f"Error saving data for possession team '{possession_team}': {e}")
-                    raise
+                    team_directory = os.path.join(self.save_offense_path, possession_team)
+                    os.makedirs(team_directory, exist_ok=True)
 
-            return full_merged_data
+                    full_file_path = os.path.join(team_directory, f"{possession_team}_full_data.csv")
+                    final_merged_df.to_csv(full_file_path, index=False)
+                    logger.info(f"Full data for possession team '{possession_team}' saved to '{full_file_path}'.")
+
+                    weekly_route_analysis_path = os.path.join(team_directory, f"{possession_team}_weekly_route_analysis.csv")
+                    weekly_route_analysis_df.to_csv(weekly_route_analysis_path, index=False)
+                    logger.info(f"Weekly Route analysis data for possession team '{possession_team}' saved to '{weekly_route_analysis_path}'.")
+
+                    weekly_pass_receiver_analysis_path = os.path.join(team_directory, f"{possession_team}_weekly_pass_receiver_analysis.csv")
+                    weekly_pass_receiver_analysis_df.to_csv(weekly_pass_receiver_analysis_path, index=False)
+                    logger.info(f"Weekly Pass-receiver analysis data for possession team '{possession_team}' saved to '{weekly_pass_receiver_analysis_path}'.")
+
+                    route_analysis_path = os.path.join(team_directory, f"{possession_team}_route_analysis.csv")
+                    route_analysis_df.to_csv(route_analysis_path, index=False)
+                    logger.info(f"Route analysis data for possession team '{possession_team}' saved to '{route_analysis_path}'.")
+
+                    pass_receiver_analysis_path = os.path.join(team_directory, f"{possession_team}_pass_receiver_analysis.csv")
+                    pass_receiver_analysis_df.to_csv(pass_receiver_analysis_path, index=False)
+                    logger.info(f"Pass-receiver analysis data for possession team '{possession_team}' saved to '{pass_receiver_analysis_path}'.")
+
+                except Exception as e:
+                    logger.error(f"Failed to save data for possession team '{possession_team}': {e}")
+
+            return final_merged_df
 
         except Exception as e:
             logger.error(f"Error retrieving possession team data: {e}")
@@ -327,19 +539,49 @@ class NFLDataLoader:
                 error_msg = f"No tracking data found for defense team '{defense_team}'."
                 logger.warning(error_msg)
                 raise ValueError(error_msg)
+            
+            # Load new data with selected columns
+            columns_to_select = [
+                'old_game_id', 'play_id', 'game_half', 'play_type', 'pass_location', 
+                'pass_length', 'run_location', 'run_gap', 'first_down_rush', 
+                'first_down_pass', 'first_down_penalty', 'third_down_converted', 
+                'third_down_failed', 'fourth_down_converted', 'fourth_down_failed', 
+                'rush_attempt', 'pass_attempt', 'lateral_reception', 'lateral_rush', 
+                'passer_player_name', 'receiver_player_name', 'rusher_player_name', 
+                'receiving_yards', 'rushing_yards', 'interception_player_name', 
+                'tackle_for_loss_1_player_name', 'tackle_for_loss_2_player_name',
+                'qb_hit_1_player_name', 'qb_hit_2_player_name', 
+                'solo_tackle_1_player_name', 'assist_tackle_1_player_name', 
+                'assist_tackle_2_player_name', 'tackle_with_assist', 
+                'tackle_with_assist_1_player_name', 'tackle_with_assist_2_player_name', 
+                'play_type_nfl', 'passer', 'rusher', 'receiver'
+            ]
+
+            df = pd.read_csv("assets/nflverse/pbp_2022.csv", usecols=columns_to_select, low_memory=False)
+            logger.info("Loaded new data from pbp_2022.csv")
+
+            # Merge with full_merged_data
+            final_merged_df = pd.merge(
+                full_merged_data,
+                df,
+                left_on=['gameId', 'playId'],  
+                right_on=['old_game_id', 'play_id'], 
+                how='left'
+            )
+            logger.info("Merged possession team data with new data.")
 
             if save:
                 try:
                     dir_name = f"{defense_team}_defense_data"
                     os.makedirs(self.save_defense_path, exist_ok=True)
                     file_path = os.path.join(self.save_defense_path, f"{dir_name}.csv")
-                    full_merged_data.to_csv(file_path, index=False)
+                    final_merged_df.to_csv(file_path, index=False)
                     logger.info(f"Data for defense team '{defense_team}' saved to '{file_path}'.")
                 except Exception as e:
                     logger.error(f"Error saving data for defense team '{defense_team}': {e}")
                     raise
 
-            return full_merged_data
+            return final_merged_df
 
         except Exception as e:
             logger.error(f"Error retrieving defense team data: {e}")
@@ -523,5 +765,4 @@ class SingleGamePlayExtractor:
 
         logging.info(f"First down marker calculated as: {marker}.")
         return marker
-
 
