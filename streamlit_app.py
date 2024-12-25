@@ -19,7 +19,7 @@ st.markdown(
     r"""
     <style>
     div[data-testid="stSidebarHeader"] > img, div[data-testid="collapsedControl"] > img {
-        height: 5rem;
+        height: 11rem;
         width: auto;
         display: block;  
         margin-left: auto;  
@@ -30,7 +30,7 @@ st.markdown(
     div[data-testid="collapsedControl"], div[data-testid="collapsedControl"] > * {
         display: flex;
         align-items: center;
-        justify-content: center;  /* Center items in the sidebar */
+        justify-content: center;
     }
 
     [data-testid="stSidebarNav"]::before {
@@ -44,61 +44,31 @@ st.markdown(
     """, unsafe_allow_html=True
 )
 
-# Introduction Page
 introduction_page = st.Page(
     page="views/introduction.py",
     title="NFL Big Data Bowl 2025",
-    icon=":material/target:",   
+    icon=":material/demography:",  
     default=True
 )
 
-# Game Predictor Page
-game_predictor_page = st.Page(
-    page="views/game_predictor.py",
-    title="NFL Play Simulator",
+game_play_simulator = st.Page(
+    page="views/game_play_simulator.py",
+    title="Game Play Simulator",
     icon=":material/sports_football:"
 )
 
-# Offense Page
-offense_page = st.Page(
-    page="views/offense.py",
-    title="Offense",
-    icon=":material/directions_run:"
+qb_passing_guide_page = st.Page(
+    page="views/qb_radar.py",
+    title="Quarterback's Radar",
+    icon=":material/target:"
 )
 
-
-# Defense Page
-defense_page = st.Page(
-    page="views/defense.py",
-    title="Defense",
-    icon=":material/sports_kabaddi:"
-)
-
-# Player Stats Page
-player_stats_page = st.Page(
-    page="views/player_stats.py",
-    title="Player Stats",
-    icon=":material/query_stats:"
-)
-
-# Team Stats Page
-team_stats_page = st.Page(
-    page="views/team_stats.py",
-    title="Team Stats",
-    icon=":material/analytics:"
-)
-
-# Navigation Setup
 pg = st.navigation(
     {
         "Intoduction": [introduction_page],
-        "Playground": [game_predictor_page],
-        "Playbook": [offense_page, defense_page],
-        "Visualization Stats": [player_stats_page, team_stats_page]
+        "Playground": [qb_passing_guide_page, game_play_simulator]
     }
 )
 
-st.logo("assets/navbar/big-data-bowl.png")
-
-# Run Navigation
+st.logo("assets/navabar/logo.png")
 pg.run()
