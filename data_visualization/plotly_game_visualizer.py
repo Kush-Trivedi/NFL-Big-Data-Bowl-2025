@@ -1,7 +1,7 @@
 import plotly.express as px
 import plotly.graph_objects as go
 
-class PlotlyGamePlayVisualizer:
+class PlotlyGameVisualizer:
     def __init__(self, df):
         self.df = df
         
