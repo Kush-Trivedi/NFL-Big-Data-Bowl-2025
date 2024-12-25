@@ -1,11 +1,13 @@
 import os
 import sys
 import time
+import math
 import logging
 import numpy as np
 from PIL import Image
 import networkx as nx
 import matplotlib.pyplot as plt
+from matplotlib.image import imread
 from data_preprocessesing.nfl_field import NFLFieldVertical
 
 
@@ -231,6 +233,120 @@ class NFLPlotVisualizeUtils:
             logger = Logger().get_logger()
             logger.error(f"Error calculating fixed arrow: {e}")
             return None, None
+    
+    @staticmethod
+    def evaluate_receiver(qb_pos, receiver_pos, defender_positions, defender_threshold=10, distance_weight=0.5, openness_weight=3.0,centrality_weight=2.0,eigenvector_score=None):
+        # Calculate distance to QB
+        distance_to_qb = np.linalg.norm(np.array(receiver_pos) - np.array(qb_pos))
+        
+        # Calculate distances to each defender
+        defender_distances = [np.linalg.norm(np.array(receiver_pos) - np.array(def_pos)) for def_pos in defender_positions]
+        
+        # Count and penalize close defenders (within threshold)
+        close_defenders = [d for d in defender_distances if d < defender_threshold]
+        defender_penalty = sum(1 / d if d > 0 else 0 for d in close_defenders)
+        
+        # Combined score with higher emphasis on openness
+        score = (distance_to_qb * distance_weight) - (defender_penalty * openness_weight)
+
+        # Add centrality influence if provided
+        if eigenvector_score is not None:
+            score += eigenvector_score * centrality_weight
+        
+        return score
+    
+    @staticmethod
+    def beam_search_pass_target(qb_pos, receiver_positions, defender_positions, initial_beam_width=5, max_beam_width=15):
+        """
+        Beam search to find the most open receiver, favoring those with minimal defensive coverage.
+        """
+        beam_width = initial_beam_width
+        best_receiver = None
+        best_score = float('-inf')
+        
+        while beam_width <= max_beam_width:
+            candidate_scores = []
+            
+            # Evaluate each receiver within the current beam width
+            for i, receiver_pos in enumerate(receiver_positions[:beam_width]):
+                score = NFLPlotVisualizeUtils.evaluate_receiver(
+                    qb_pos, receiver_pos, defender_positions, defender_threshold=10, distance_weight=0.5, openness_weight=3.0
+                )
+                candidate_scores.append((i, score))
+
+            # Sort candidates by score, prioritizing those with fewer defenders nearby
+            candidate_scores.sort(key=lambda x: x[1], reverse=True)
+            
+            for i, score in candidate_scores:
+                if score > best_score:
+                    best_score = score
+                    best_receiver = i  # Track receiver index with highest score
+
+            # Stop expanding if the best receiver is significantly open
+            if best_receiver is not None and best_score > 0:  # Adjust this condition based on the scoring
+                break
+
+            beam_width += 2  # Expand to consider more receivers in next iteration
+
+        return best_receiver, best_score
+    
+    @staticmethod
+    def progressive_widening_search_receiver(qb_pos, receiver_positions, defender_positions, initial_beam_width=5, max_beam_width=15):
+        beam_width = initial_beam_width
+        best_receiver = None
+        best_score = float('-inf')
+        
+        # Build a graph of players (receivers and defenders) to calculate centrality
+        G = nx.Graph()
+        all_positions = [qb_pos] + receiver_positions + defender_positions
+        
+        # Add nodes for each player
+        for idx, pos in enumerate(all_positions):
+            G.add_node(idx, pos=pos)
+        
+        # Add edges based on proximity
+        for i, pos1 in enumerate(all_positions):
+            for j, pos2 in enumerate(all_positions):
+                if i != j and np.linalg.norm(np.array(pos1) - np.array(pos2)) < 10:  # Threshold for influence
+                    G.add_edge(i, j)
+        
+        try:
+            centrality = nx.eigenvector_centrality(G, max_iter=1000)
+        except nx.PowerIterationFailedConvergence as e:
+            print(f"Eigenvector centrality failed to converge: {e}")
+            centrality = nx.katz_centrality(G)
+        
+        # Only keep centrality scores for receivers
+        receiver_centrality_scores = [centrality[i + 1] for i in range(len(receiver_positions))]  # Receivers start after QB
+        
+        # Progressive widening search loop
+        while beam_width <= max_beam_width:
+            candidate_scores = []
+            
+            # Evaluate each receiver within the current beam width
+            for i, receiver_pos in enumerate(receiver_positions[:beam_width]):
+                score = NFLPlotVisualizeUtils.evaluate_receiver(
+                    qb_pos, receiver_pos, defender_positions,
+                    eigenvector_score=receiver_centrality_scores[i],
+                    defender_threshold=10, distance_weight=0.5, openness_weight=3.0, centrality_weight=2.0
+                )
+                candidate_scores.append((i, score))
+
+            # Sort candidates by score, prioritizing those with fewer defenders nearby
+            candidate_scores.sort(key=lambda x: x[1], reverse=True)
+            
+            for i, score in candidate_scores:
+                if score > best_score:
+                    best_score = score
+                    best_receiver = i  # Track receiver index with highest score
+
+            # Stop expanding if the best receiver is significantly open
+            if best_receiver is not None and best_score > 0:  # Adjust this condition based on the scoring
+                break
+
+            beam_width += 2  # Expand to consider more receivers in the next iteration
+
+        return best_receiver, best_score
 
 
     @staticmethod
@@ -341,11 +457,7 @@ class NFLPlotVisualizer:
             None
         """
         self.pitch_image_path = pitch_image_path
-        try:
-            self.pitch_img = Image.open(self.pitch_image_path)
-        except Exception as e:
-            logging.error(f"Error loading image at {self.pitch_image_path}: {e}")
-            raise
+        
 
     def initialize_plot(self, line_of_scrimmage, first_down_marker):
         """
@@ -360,7 +472,8 @@ class NFLPlotVisualizer:
         """
         try:
             fig, ax = plt.subplots()
-            ax.imshow(self.pitch_img, extent=[0, 53.3, 0, 120], aspect='auto')
+            pitch_img = Image.open(self.pitch_image_path)
+            ax.imshow(pitch_img, extent=[0, 53.3, 0, 120], aspect='auto') 
             ax.axhline(y=line_of_scrimmage, color='#00539CFF', linestyle='-', linewidth=4)
             ax.axhline(y=first_down_marker, color='#FDD20EFF', linestyle='-', linewidth=4)
             return fig, ax
@@ -388,6 +501,47 @@ class NFLPlotVisualizer:
         except Exception as e:
             logging.error(f"Error processing frames: {e}")
             raise
+
+    def find_best_receiver(self, offense_players, qb_position, defender_positions):
+        """Identify the best receiver for the QB based on centrality or evaluation, considering only TE, WR, and RB positions."""
+        
+        # Filter offense players to include only TE, WR, RB, but add QB for centrality calculations
+        eligible_receivers = offense_players[offense_players['position'].isin(['TE', 'WR', 'RB'])]
+        qb_pos = (qb_position['x'], qb_position['y'])
+        
+        # Include QB in the graph nodes for centrality calculations
+        G = nx.Graph()
+        G.add_node(qb_position['displayName'], pos=qb_pos)  # Add QB as the source node for centrality
+
+        for _, player1 in eligible_receivers.iterrows():
+            G.add_node(player1['displayName'], pos=(player1['x'], player1['y']))
+            for j, player2 in eligible_receivers.iterrows():
+                if player1['displayName'] != player2['displayName']:
+                    x1, y1 = player1['x'], player1['y']
+                    x2, y2 = player2['x'], player2['y']
+                    distance = NFLPlotVisualizeUtils.calculate_distance(x1, y1, x2, y2)
+
+                    if distance > 0:  # Only add edge if distance is greater than zero
+                        G.add_edge(player1['displayName'], player2['displayName'], weight=1 / distance)
+
+       
+        receiver_positions = [(player['x'], player['y']) for _, player in eligible_receivers.iterrows()]
+        # Perform progressive widening search
+        best_receiver_index_widening, best_score_widening = NFLPlotVisualizeUtils.progressive_widening_search_receiver(
+            qb_pos, receiver_positions, defender_positions, initial_beam_width=5, max_beam_width=15
+        )
+        
+        # Perform beam search as a secondary methodß
+        best_receiver_index_beam, best_score_beam = NFLPlotVisualizeUtils.beam_search_pass_target(
+            qb_pos, receiver_positions, defender_positions, initial_beam_width=3, max_beam_width=10
+        )
+        
+        # Return the names of both receivers found by each method
+        best_receiver_widening = eligible_receivers.iloc[best_receiver_index_widening]['displayName'] if best_receiver_index_widening is not None else None
+        best_receiver_beam = eligible_receivers.iloc[best_receiver_index_beam]['displayName'] if best_receiver_index_beam is not None else None
+        
+        return best_receiver_widening, best_score_widening, best_receiver_beam, best_score_beam
+    
 
     def add_player_scatter(self, ax, x, y, jersey_number, team_color, label_prefix=''):
         """
