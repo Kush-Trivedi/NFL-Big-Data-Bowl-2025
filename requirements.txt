@@ -1,0 +1,9 @@
+pandas
+numpy
+joblib
+streamlit==1.40.0
+tf_keras
+tensorflow
+matplotlib
+seaborn
+scikit-learn
