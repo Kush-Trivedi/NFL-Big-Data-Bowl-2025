@@ -11,7 +11,7 @@ logger = Logger().get_logger()
 
 class NFLDataLoader:
     path = "assets/nfl-big-data-bowl-2025/"
-    save_offense_path = "assets/offesnse-data/" 
+    save_offense_path = "assets/offense-data/" 
     save_defense_path = "assets/defense-data/"
     
     def __init__(self):
@@ -2332,9 +2332,9 @@ class PlayGroundSimulatorDataProcessor:
         logger.info("Starting file processing for PlayGroundSimulatorDataProcessor")
         for team_name in self.team_names:
             # File paths
-            offense_data_path = f"assets/offesnse-data/{team_name}/{team_name}_full_data.csv"
+            offense_data_path = f"assets/offense-data/{team_name}/{team_name}_full_data.csv"
             defense_data_path = f"assets/defense-data/{team_name}/{team_name}_full_data.csv"
-            route_combos_path = f"assets/offesnse-data/{team_name}/combined/full_route_combos.csv"
+            route_combos_path = f"assets/offenseoffense-data/{team_name}/combined/full_route_combos.csv"
             player_ratings_path = "assets/player_ratings/all_player_ratings.csv"
 
             logger.info(f"Processing PlayGroundSimulatorOffenseDataProcessor for team:{team_name}")
