@@ -215,9 +215,8 @@ class NFLDataLoader:
             )
             logger.debug("Merged players data.")
             
-            merged_data['nflId'].fillna(999999, inplace=True)
-            merged_data['jerseyNumber'] = merged_data['jerseyNumber'].astype(object)
-            merged_data['jerseyNumber'].fillna("", inplace=True)
+            merged_data['nflId'] = merged_data['nflId'].fillna(999999)
+            merged_data['jerseyNumber'] = merged_data['jerseyNumber'].astype(object).fillna("")
             merged_data.rename(columns={'club': 'Team'}, inplace=True)
             
             logger.info(f"Data merged for gameId {game_id} and playId {play_id}.")
@@ -479,9 +478,8 @@ class NFLDataLoader:
                     )
                     logger.debug("Merged players data.")
                     
-                    merged_data.fillna({"nflId": 999999}, inplace=True)
-                    merged_data['jerseyNumber'] = merged_data['jerseyNumber'].astype(object)
-                    merged_data.fillna({"jerseyNumber": ""}, inplace=True)
+                    merged_data['nflId'] = merged_data['nflId'].fillna(999999)
+                    merged_data['jerseyNumber'] = merged_data['jerseyNumber'].astype(object).fillna("")
                     merged_data.rename(columns={'club': 'Team'}, inplace=True)
                     
                     merged_chunks.append(merged_data)
@@ -645,9 +643,8 @@ class NFLDataLoader:
                     )
                     logger.debug("Merged players data.")
                     
-                    merged_data['nflId'].fillna(999999, inplace=True)  
-                    merged_data['jerseyNumber'] = merged_data['jerseyNumber'].astype(object)
-                    merged_data['jerseyNumber'].fillna("", inplace=True)
+                    merged_data['nflId'] = merged_data['nflId'].fillna(999999)
+                    merged_data['jerseyNumber'] = merged_data['jerseyNumber'].astype(object).fillna("")
                     merged_data.rename(columns={'club': 'Team'}, inplace=True)
                     
                     merged_chunks.append(merged_data)
