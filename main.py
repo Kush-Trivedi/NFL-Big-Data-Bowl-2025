@@ -122,7 +122,7 @@ class NFLProcessor:
 
     def process_qb_radar(self):
         """Process QB radar data for each team, saving individual and combined files."""
-        base_file_path = "assets/offesnse-data/{team_name}/{team_name}_full_data.csv"
+        base_file_path = "assets/offense-data/{team_name}/{team_name}_full_data.csv"
         QBRadarProcessor.process_qb_radar_for_teams(
             team_names=self.team_names,
             base_file_path=base_file_path,
