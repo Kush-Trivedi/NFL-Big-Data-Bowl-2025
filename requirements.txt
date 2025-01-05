@@ -7,3 +7,8 @@ tensorflow
 matplotlib
 seaborn
 scikit-learn
+networkx
+xhtml2pdf
+joypy
+imageio
+plotly
