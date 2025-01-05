@@ -35,8 +35,8 @@ class NFLProcessor:
         ]  
         
 
-        self.route_analyzer_base_path = "assets/offesnse-data"
-        self.offense_player_rating_base_path = "assets/offesnse-data"
+        self.route_analyzer_base_path = "assets/offense-data"
+        self.offense_player_rating_base_path = "assets/offense-data"
         self.defense_player_rating_base_path = "assets/defense-data"
         self.qb_radar_base_path = "assets/qb_radar"
         os.makedirs(self.qb_radar_base_path, exist_ok=True)
