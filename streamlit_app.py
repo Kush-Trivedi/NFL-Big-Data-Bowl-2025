@@ -2,6 +2,18 @@ import streamlit as st
 
 st.set_page_config(layout="wide")
 
+st.sidebar.markdown(
+    """
+    <div style='display: flex; align-items: center; justify-content: flex-start; margin-top: 5px; margin-left: 5px;'>
+        <img src="https://cdn-icons-png.flaticon.com/512/25/25231.png" alt="GitHub" style="width:20px; height:20px; margin-right: 10px;">
+        <a href="https://github.com/Kush-Trivedi/NFL-Big-Data-Bowl-2025" target="_blank" style="text-decoration: none; font-size: 18px; color: #333;">
+            Source Code
+        </a>
+    </div>
+    """, unsafe_allow_html=True
+)
+
+
 st.markdown(
     r"""
     <style>
@@ -44,6 +56,7 @@ st.markdown(
     """, unsafe_allow_html=True
 )
 
+# Introduction Page
 introduction_page = st.Page(
     page="views/introduction.py",
     title="NFL Big Data Bowl 2025",
@@ -51,24 +64,38 @@ introduction_page = st.Page(
     default=True
 )
 
+# Advance Game Predictor Page
 game_play_simulator = st.Page(
     page="views/game_play_simulator.py",
     title="Game Play Simulator",
     icon=":material/sports_football:"
 )
 
+# Game Play Page
 qb_passing_guide_page = st.Page(
     page="views/qb_radar.py",
-    title="Quarterback's Radar",
+    title="QB's Radar (Optional)",
     icon=":material/target:"
 )
 
+# Dink & Dunk Page
+dink_dunck = st.Page(
+    page="views/dink_dunk.py",
+    title="Dink & Dunk Report",
+    icon=":material/inventory:"
+)
+
+
+
+# Navigation Setup
 pg = st.navigation(
     {
         "Intoduction": [introduction_page],
-        "Playground": [qb_passing_guide_page, game_play_simulator]
+        "Playground": [game_play_simulator, dink_dunck, qb_passing_guide_page]
     }
 )
 
-st.logo("assets/navabar/logo.png")
+st.logo("assets/navbar/logo.png")
+
+# Run Navigation
 pg.run()
