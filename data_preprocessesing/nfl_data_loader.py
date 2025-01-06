@@ -1,18 +1,18 @@
-import os
 import re
-import pandas as pd
-pd.set_option('future.no_silent_downcasting', True)
 import traceback
+import pandas as pd
+from pathlib import Path
 from utils.helpers import *
 from collections import defaultdict, Counter
+pd.set_option('future.no_silent_downcasting', True)
 
 # Initilize the logger
 logger = Logger().get_logger()
 
 class NFLDataLoader:
-    path = "assets/nfl-big-data-bowl-2025/"
-    save_offense_path = "assets/offense-data/" 
-    save_defense_path = "assets/defense-data/"
+    path = Path("assets/nfl-big-data-bowl-2025/")
+    save_offense_path = Path("assets/offense-data/")
+    save_defense_path = Path("assets/defense-data/")
     
     def __init__(self):
         """Initializes the NFLDataLoader with empty data attributes."""
@@ -75,14 +75,17 @@ class NFLDataLoader:
                 dtype_name = df[col].dtype.name
                 if dtype_name == 'object':
                     logger.debug(f"Column '{col}' is of type object; skipping downcast.")
-                    pass
+                    continue
                 elif dtype_name == 'bool':
                     df[col] = df[col].astype('int8')
                     logger.debug(f"Column '{col}' downcasted to int8.")
-                elif dtype_name.startswith('int') or (df[col].round() == df[col]).all():
+                elif dtype_name.startswith('int'):
+                    if df[col].max() > 2**31 - 1 or df[col].min() < -(2**31):
+                        logger.debug(f"Column '{col}' preserved as int64 due to large values.")
+                        continue
                     df[col] = pd.to_numeric(df[col], downcast='integer')
                     logger.debug(f"Column '{col}' downcasted to integer.")
-                else:
+                elif dtype_name.startswith('float'):
                     df[col] = pd.to_numeric(df[col], downcast='float')
                     logger.debug(f"Column '{col}' downcasted to float.")
 
@@ -108,9 +111,9 @@ class NFLDataLoader:
             pd.DataFrame: The loaded DataFrame.
         """
         try:
-            file_path = os.path.join(self.path, file_name)
-            logger.info(f"Loading data from {file_path}")
-            df = pd.read_csv(file_path)
+            file_path = self.path / file_name
+            logger.info(f"Loading data from {file_path}.")
+            df = pd.read_csv(file_path, encoding='utf-8', engine='c', low_memory=False)
             logger.info(f"Loaded {len(df)} records from {file_name}")
             return df
 
@@ -158,7 +161,7 @@ class NFLDataLoader:
             logger.info(f"Loading tracking data for gameId {game_id} and playId {play_id}.")
 
             for file_name in tracking_files:
-                file_path = os.path.join(self.path, file_name)
+                file_path = self.path / file_name
                 logger.debug(f"Processing file {file_path}")
                 for chunk in pd.read_csv(file_path, chunksize=10000):
                     filtered_chunk = chunk[(chunk['gameId'] == game_id) & (chunk['playId'] == play_id)]
@@ -459,7 +462,7 @@ class NFLDataLoader:
             tracking_files = [f"tracking_week_{week_num}.csv" for week_num in range(1, 10)]
 
             for file_name in tracking_files:
-                file_path = os.path.join(self.path, file_name)
+                file_path = self.path / file_name
                 logger.debug(f"Processing tracking file {file_path}")
                 for chunk in pd.read_csv(file_path, chunksize=10000):
                     plays_with_tracking = pd.merge(chunk, filtered_plays, on=['gameId', 'playId'], how='inner')
@@ -510,8 +513,9 @@ class NFLDataLoader:
                 'play_type_nfl', 'passer', 'rusher', 'receiver','yardline_100'
             ]
 
-            df = pd.read_csv("assets/nflverse/pbp_2022.csv", usecols=columns_to_select, low_memory=False)
-            logger.info("Loaded new data from pbp_2022.csv")
+            nflverse_file_path = Path("assets/nflverse/pbp_2022.csv")
+            df = pd.read_csv(nflverse_file_path, usecols=columns_to_select, low_memory=False)
+            logger.info(f"Loaded new data from {nflverse_file_path}")
 
             # Merge with full_merged_data
             temp_final_merged_df = pd.merge(
@@ -567,26 +571,26 @@ class NFLDataLoader:
 
             if save:
                 try:
-                    team_directory = os.path.join(self.save_offense_path, possession_team)
-                    os.makedirs(team_directory, exist_ok=True)
+                    team_directory = self.save_offense_path / possession_team
+                    team_directory.mkdir(parents=True, exist_ok=True)
 
-                    full_file_path = os.path.join(team_directory, f"{possession_team}_full_data.csv")
+                    full_file_path = team_directory / f"{possession_team}_full_data.csv"
                     final_merged_df.to_csv(full_file_path, index=False)
                     logger.info(f"Full data for possession team '{possession_team}' saved to '{full_file_path}'.")
 
-                    weekly_route_analysis_path = os.path.join(team_directory, f"{possession_team}_weekly_route_analysis.csv")
+                    weekly_route_analysis_path = team_directory / f"{possession_team}_weekly_route_analysis.csv"
                     weekly_route_analysis_df.to_csv(weekly_route_analysis_path, index=False)
                     logger.info(f"Weekly Route analysis data for possession team '{possession_team}' saved to '{weekly_route_analysis_path}'.")
 
-                    weekly_pass_receiver_analysis_path = os.path.join(team_directory, f"{possession_team}_weekly_pass_receiver_analysis.csv")
+                    weekly_pass_receiver_analysis_path = team_directory / f"{possession_team}_weekly_pass_receiver_analysis.csv"
                     weekly_pass_receiver_analysis_df.to_csv(weekly_pass_receiver_analysis_path, index=False)
                     logger.info(f"Weekly Pass-receiver analysis data for possession team '{possession_team}' saved to '{weekly_pass_receiver_analysis_path}'.")
 
-                    route_analysis_path = os.path.join(team_directory, f"{possession_team}_route_analysis.csv")
+                    route_analysis_path = team_directory / f"{possession_team}_route_analysis.csv"
                     route_analysis_df.to_csv(route_analysis_path, index=False)
                     logger.info(f"Route analysis data for possession team '{possession_team}' saved to '{route_analysis_path}'.")
 
-                    pass_receiver_analysis_path = os.path.join(team_directory, f"{possession_team}_pass_receiver_analysis.csv")
+                    pass_receiver_analysis_path = team_directory / f"{possession_team}_pass_receiver_analysis.csv"
                     pass_receiver_analysis_df.to_csv(pass_receiver_analysis_path, index=False)
                     logger.info(f"Pass-receiver analysis data for possession team '{possession_team}' saved to '{pass_receiver_analysis_path}'.")
 
@@ -624,7 +628,7 @@ class NFLDataLoader:
             tracking_files = [f"tracking_week_{week_num}.csv" for week_num in range(1, 10)]
 
             for file_name in tracking_files:
-                file_path = os.path.join(self.path, file_name)
+                file_path = self.path / file_name
                 logger.debug(f"Processing tracking file {file_path}")
                 for chunk in pd.read_csv(file_path, chunksize=10000):
                     plays_with_tracking = pd.merge(chunk, filtered_plays, on=['gameId', 'playId'], how='inner')
@@ -675,8 +679,9 @@ class NFLDataLoader:
                 'play_type_nfl', 'passer', 'rusher', 'receiver', 'yardline_100'
             ]
 
-            df = pd.read_csv("assets/nflverse/pbp_2022.csv", usecols=columns_to_select, low_memory=False)
-            logger.info("Loaded new data from pbp_2022.csv")
+            nflverse_file_path = Path("assets/nflverse/pbp_2022.csv")
+            df = pd.read_csv(nflverse_file_path, usecols=columns_to_select, low_memory=False)
+            logger.info(f"Loaded new data from {nflverse_file_path}")
 
             # Merge with full_merged_data
             temp_final_merged_df = pd.merge(
@@ -722,10 +727,10 @@ class NFLDataLoader:
 
             if save:
                 try:
-                    team_directory = os.path.join(self.save_defense_path, defense_team)
-                    os.makedirs(team_directory, exist_ok=True)
+                    team_directory = self.save_defense_path / defense_team
+                    team_directory.mkdir(parents=True, exist_ok=True)
 
-                    full_file_path = os.path.join(team_directory, f"{defense_team}_full_data.csv")
+                    full_file_path = team_directory / f"{defense_team}_full_data.csv"
                     final_merged_df.to_csv(full_file_path, index=False)
                     logger.info(f"Full data for defense team '{defense_team}' saved to '{full_file_path}'.")
 
@@ -755,7 +760,7 @@ class NFLDataLoader:
             tracking_files = [f"tracking_week_{week_num}.csv" for week_num in range(1, 10)]
             
             for file_name in tracking_files:
-                file_path = os.path.join(self.path, file_name)
+                file_path = self.path / file_name
                 logger.debug(f"Processing tracking file {file_path}")
                 for chunk in pd.read_csv(file_path, chunksize=chunk_size):
                     plays_with_tracking = pd.merge(chunk, self.plays, on=['gameId', 'playId'], how='inner')
@@ -883,6 +888,7 @@ class SingleGamePlayExtractor:
             'play_description': game_play_df.playDescription.values[0],
             'offense_formation': game_play_df.offenseFormation.values[0],
             'line_of_scrimmage': game_play_df.absoluteYardlineNumber.values[0],
+            'yard_line_number': game_play_df.yardlineNumber.values[0],
             'down': game_play_df.down.values[0],
             'quarter': game_play_df.quarter.values[0],
             'play_direction': game_play_df.playDirection.values[0],
@@ -891,8 +897,9 @@ class SingleGamePlayExtractor:
             'pre_snap_visitor_score': game_play_df.preSnapVisitorScore.values[0],
             'home_team_abbr': game_play_df.homeTeamAbbr.values[0],
             'visitor_team_abbr': game_play_df.visitorTeamAbbr.values[0],
-            'game_lock': game_play_df.gameClock.values[0],
-            'time': game_play_df['time'].unique()
+            'game_clock': game_play_df.gameClock.values[0],
+            'time': game_play_df['time'].unique(),
+            'event': game_play_df['event'].unique()
         }
 
         logging.info(f"Successfully extracted data for gameId: {gameId} and playId: {playId}.")
@@ -1320,12 +1327,13 @@ class QBRadarProcessor:
             output_base_path (str): Base path to save QB radar output files.
         """
         all_team_data = []
-        os.makedirs(output_base_path, exist_ok=True)
+        output_base_path = Path(output_base_path)
+        output_base_path.mkdir(parents=True, exist_ok=True)
 
         for team_name in team_names:
-            team_file_path = base_file_path.format(team_name=team_name)
-            output_file_path = os.path.join(output_base_path, f"{team_name}_qb_radar.csv")
-            
+            team_file_path = Path(base_file_path.format(team_name=team_name))
+            output_file_path = output_base_path / f"{team_name}_qb_radar.csv"
+
             try:
                 logger.info(f"Reading QB radar GameId PlayId for {team_name}")
                 team_df = pd.read_csv(team_file_path, usecols=["gameId", "playId", "play_type"])
@@ -1336,8 +1344,8 @@ class QBRadarProcessor:
                     continue
 
                 unique_game_play_ids = team_df[['gameId', 'playId']].drop_duplicates()
-                logger.info(f"Succesfully fetched all QB radar GameId PlayId for {team_name}")
-                
+                logger.info(f"Successfully fetched all QB radar GameId PlayId for {team_name}")
+
                 play_data_list = []
                 logger.info(f"Processing QB radar data for {team_name}")
 
@@ -1357,12 +1365,11 @@ class QBRadarProcessor:
                         logger.error(f"Error processing play {game_id}-{play_id}: {str(e)}")
                         logger.error(traceback.format_exc()) 
                         continue
-   
-                
+
                 # Concatenate and save team-specific data
                 if play_data_list:
                     team_summary_df = pd.concat(play_data_list, ignore_index=True)
-                    os.makedirs(os.path.dirname(output_file_path), exist_ok=True)
+                    output_file_path.parent.mkdir(parents=True, exist_ok=True)
                     team_summary_df.to_csv(output_file_path, index=False)
                     logger.info(f"Processed and saved QB radar data for {team_name}")
                     
@@ -1377,11 +1384,12 @@ class QBRadarProcessor:
         # Save combined data for all teams
         if all_team_data:
             full_summary_df = pd.concat(all_team_data, ignore_index=True)
-            full_output_path = os.path.join(output_base_path, "full_qb_radar.csv")
+            full_output_path = output_base_path / "full_qb_radar.csv"
             full_summary_df.to_csv(full_output_path, index=False)
             logger.info(f"All team QB radar data combined and saved to {full_output_path}")
         else:
             logger.warning("No valid team data found for any team.")
+
 
 
 
@@ -1858,12 +1866,11 @@ class PlayerRatingProcessor:
         """
         Initialize the processor with base paths for offense, defense, and combined ratings.
         """
-        self.offense_player_rating_base_path = offense_player_rating_base_path
-        self.defense_player_rating_base_path = defense_player_rating_base_path
-        self.player_ratings_base_path = player_ratings_base_path
-        os.makedirs(player_ratings_base_path, exist_ok=True)
+        self.offense_player_rating_base_path = Path(offense_player_rating_base_path)
+        self.defense_player_rating_base_path = Path(defense_player_rating_base_path)
+        self.player_ratings_base_path = Path(player_ratings_base_path)
+        self.player_ratings_base_path.mkdir(parents=True, exist_ok=True)
 
-    
     def process_offense_player_rating(self, team_names):
         """
         Process offensive player ratings for all teams and save combined results.
@@ -1871,7 +1878,7 @@ class PlayerRatingProcessor:
         all_team_ratings = []
         for team_name in team_names:
             try:
-                file_path = os.path.join(self.offense_player_rating_base_path, team_name, f"{team_name}_full_data.csv")
+                file_path = self.offense_player_rating_base_path / team_name / f"{team_name}_full_data.csv"
                 df = pd.read_csv(file_path, low_memory=False)
 
                 metrics = OffensivePlayerMetrics(df)
@@ -1879,7 +1886,7 @@ class PlayerRatingProcessor:
                 team_ratings['Team'] = team_name
 
                 # Save individual team ratings
-                team_output_path = os.path.join(self.player_ratings_base_path, f"{team_name}_offense_ratings.csv")
+                team_output_path = self.player_ratings_base_path / f"{team_name}_offense_ratings.csv"
                 team_ratings.to_csv(team_output_path, index=False)
 
                 all_team_ratings.append(team_ratings)
@@ -1889,7 +1896,7 @@ class PlayerRatingProcessor:
 
         # Combine all team ratings
         combined_ratings = pd.concat(all_team_ratings, ignore_index=True)
-        combined_output_path = os.path.join(self.player_ratings_base_path, "combined_offense_ratings.csv")
+        combined_output_path = self.player_ratings_base_path / "combined_offense_ratings.csv"
         combined_ratings.to_csv(combined_output_path, index=False)
         logger.info("Combined offensive player ratings saved")
 
@@ -1900,7 +1907,7 @@ class PlayerRatingProcessor:
         all_team_ratings = []
         for team_name in team_names:
             try:
-                file_path = os.path.join(self.defense_player_rating_base_path, team_name, f"{team_name}_full_data.csv")
+                file_path = self.defense_player_rating_base_path / team_name / f"{team_name}_full_data.csv"
                 df = pd.read_csv(file_path, low_memory=False)
 
                 metrics = DefensivePlayerMetrics(df)
@@ -1908,7 +1915,7 @@ class PlayerRatingProcessor:
                 team_ratings['Team'] = team_name
 
                 # Save individual team ratings
-                team_output_path = os.path.join(self.player_ratings_base_path, f"{team_name}_defense_ratings.csv")
+                team_output_path = self.player_ratings_base_path / f"{team_name}_defense_ratings.csv"
                 team_ratings.to_csv(team_output_path, index=False)
 
                 all_team_ratings.append(team_ratings)
@@ -1918,7 +1925,7 @@ class PlayerRatingProcessor:
 
         # Combine all team ratings
         combined_ratings = pd.concat(all_team_ratings, ignore_index=True)
-        combined_output_path = os.path.join(self.player_ratings_base_path, "combined_defense_ratings.csv")
+        combined_output_path = self.player_ratings_base_path / "combined_defense_ratings.csv"
         combined_ratings.to_csv(combined_output_path, index=False)
         logger.info("Combined defensive player ratings saved")
 
@@ -1929,8 +1936,8 @@ class PlayerRatingProcessor:
         for team_name in team_names:
             try:
                 # Load team data
-                offense_file_path = os.path.join(self.offense_player_rating_base_path, team_name, f"{team_name}_full_data.csv")
-                defense_file_path = os.path.join(self.defense_player_rating_base_path, team_name, f"{team_name}_full_data.csv")
+                offense_file_path = self.offense_player_rating_base_path / team_name / f"{team_name}_full_data.csv"
+                defense_file_path = self.defense_player_rating_base_path / team_name / f"{team_name}_full_data.csv"
                 offense_df = pd.read_csv(offense_file_path, low_memory=False)
                 defense_df = pd.read_csv(defense_file_path, low_memory=False)
 
@@ -1946,35 +1953,29 @@ class PlayerRatingProcessor:
                         defense_filtered = defense_df[(defense_df['quarter'] == quarter) & (defense_df['down'] == down)]
 
                         if not offense_filtered.empty:
-                            # Calculate offense ratings
                             offense_metrics.dataframe = offense_filtered
                             offense_ratings = offense_metrics.calculate_all_offense_ratings()
                         else:
                             offense_ratings = pd.DataFrame()
-                            logger.warning("No Ratings Found!")
 
                         if not defense_filtered.empty:
-                            # Calculate defense ratings
                             defense_metrics.dataframe = defense_filtered
                             defense_ratings = defense_metrics.calculate_all_defense_ratings()
                         else:
                             defense_ratings = pd.DataFrame()
-                            logger.warning("No Ratings Found!")
 
                         # Combine offense and defense ratings
                         combined_ratings = pd.concat([offense_ratings, defense_ratings], ignore_index=True)
 
-                        # Save the file with the naming convention {quarter}_{down}_all_player_ratings.csv
                         if not combined_ratings.empty:
                             file_name = f"{quarter}_{down}_all_player_ratings.csv"
-                            output_path = os.path.join(self.player_ratings_base_path, team_name, file_name)
-                            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+                            output_path = self.player_ratings_base_path / team_name / file_name
+                            output_path.parent.mkdir(parents=True, exist_ok=True)
                             combined_ratings.to_csv(output_path, index=False)
                             logger.info(f"Saved player ratings for quarter {quarter}, down {down} for team {team_name}")
 
             except Exception as e:
                 logger.error(f"Error processing player ratings by quarter and down for {team_name}: {e}")
-                
 
     def concat_player_ratings_by_quarter_and_down(self, team_names):
         """
@@ -1982,54 +1983,45 @@ class PlayerRatingProcessor:
         """
         for quarter in range(1, 6):  # Quarters 1-5
             for down in range(1, 5):  # Downs 1-4
-                all_team_ratings = []  # Store ratings for all teams for the current quarter and down
+                all_team_ratings = []
                 for team_name in team_names:
                     try:
-                        # File path for the specific team's quarter and down
-                        team_file_path = os.path.join(
-                            self.player_ratings_base_path, 
-                            team_name, 
-                            f"{quarter}_{down}_all_player_ratings.csv"
-                        )
-                        if os.path.exists(team_file_path):
+                        team_file_path = self.player_ratings_base_path / team_name / f"{quarter}_{down}_all_player_ratings.csv"
+                        if team_file_path.exists():
                             team_ratings = pd.read_csv(team_file_path)
                             all_team_ratings.append(team_ratings)
                         else:
                             logger.warning(f"File not found: {team_file_path}")
                     except Exception as e:
                         logger.error(f"Error reading file for {team_name}, quarter {quarter}, down {down}: {e}")
-                
-                if all_team_ratings:
-                    # Combine all team ratings for the current quarter and down
-                    combined_ratings = pd.concat(all_team_ratings, ignore_index=True)
 
-                    # Save the combined file
+                if all_team_ratings:
+                    combined_ratings = pd.concat(all_team_ratings, ignore_index=True)
                     combined_file_name = f"all_{quarter}_{down}_player_rating.csv"
-                    combined_file_path = os.path.join(self.player_ratings_base_path, combined_file_name)
+                    combined_file_path = self.player_ratings_base_path / combined_file_name
                     combined_ratings.to_csv(combined_file_path, index=False)
                     logger.info(f"Saved combined player ratings: {combined_file_name}")
                 else:
                     logger.warning(f"No data to combine for quarter {quarter}, down {down}")
 
-
     def process_all_player_ratings(self):
         """
         Process both offense and defense ratings and combine them into a single file.
         """
-        # Combine offense and defense ratings
-        offense_ratings_path = os.path.join(self.player_ratings_base_path, "combined_offense_ratings.csv")
-        defense_ratings_path = os.path.join(self.player_ratings_base_path, "combined_defense_ratings.csv")
+        offense_ratings_path = self.player_ratings_base_path / "combined_offense_ratings.csv"
+        defense_ratings_path = self.player_ratings_base_path / "combined_defense_ratings.csv"
 
-        if os.path.exists(offense_ratings_path) and os.path.exists(defense_ratings_path):
+        if offense_ratings_path.exists() and defense_ratings_path.exists():
             offense_ratings = pd.read_csv(offense_ratings_path)
             defense_ratings = pd.read_csv(defense_ratings_path)
 
             all_ratings = pd.concat([offense_ratings, defense_ratings], ignore_index=True)
-            all_ratings_output_path = os.path.join(self.player_ratings_base_path, "all_player_ratings.csv")
+            all_ratings_output_path = self.player_ratings_base_path / "all_player_ratings.csv"
             all_ratings.to_csv(all_ratings_output_path, index=False)
             logger.info("All player ratings combined and saved")
         else:
             logger.error("Cannot combine ratings: One or both combined ratings files are missing")
+
 
 
 
@@ -2322,8 +2314,8 @@ class PlayGroundSimulatorDefenseDataProcessor:
 class PlayGroundSimulatorDataProcessor:
     def __init__(self, team_names, output_folder="assets/playground/"):
         self.team_names = team_names
-        self.output_folder = output_folder
-        os.makedirs(self.output_folder, exist_ok=True)
+        self.output_folder = Path(output_folder)
+        self.output_folder.mkdir(parents=True, exist_ok=True)
 
     def process_team_files(self):
         offense_dfs = []
@@ -2332,10 +2324,10 @@ class PlayGroundSimulatorDataProcessor:
         logger.info("Starting file processing for PlayGroundSimulatorDataProcessor")
         for team_name in self.team_names:
             # File paths
-            offense_data_path = f"assets/offense-data/{team_name}/{team_name}_full_data.csv"
-            defense_data_path = f"assets/defense-data/{team_name}/{team_name}_full_data.csv"
-            route_combos_path = f"assets/offenseoffense-data/{team_name}/combined/full_route_combos.csv"
-            player_ratings_path = "assets/player_ratings/all_player_ratings.csv"
+            offense_data_path = Path(f"assets/offense-data/{team_name}/{team_name}_full_data.csv")
+            defense_data_path = Path(f"assets/defense-data/{team_name}/{team_name}_full_data.csv")
+            route_combos_path = Path(f"assets/offenseoffense-data/{team_name}/combined/full_route_combos.csv")
+            player_ratings_path = Path("assets/player_ratings/all_player_ratings.csv")
 
             logger.info(f"Processing PlayGroundSimulatorOffenseDataProcessor for team:{team_name}")
             # Process offense data
@@ -2351,7 +2343,7 @@ class PlayGroundSimulatorDataProcessor:
             offense_data = offense_processor.get_final_data()
 
             # Store individual offense file
-            offense_file_path = os.path.join(self.output_folder, f"{team_name}_offense_data.csv")
+            offense_file_path = self.output_folder / f"{team_name}_offense_data.csv"
             logger.info(f"Storing PlayGround Simulator Offense Data for team {team_name}")
             offense_data.drop_duplicates(subset=["gameId", "playId"], inplace=True)
             offense_data.to_csv(offense_file_path, index=False)
@@ -2372,7 +2364,7 @@ class PlayGroundSimulatorDataProcessor:
             defense_data = defense_processor.get_final_data()
 
             # Store individual defense file
-            defense_file_path = os.path.join(self.output_folder, f"{team_name}_defense_data.csv")
+            defense_file_path = self.output_folder / f"{team_name}_defense_data.csv"
             logger.info(f"Storing PlayGround Simulator Defense Data for team {team_name}")
             defense_data.drop_duplicates(subset=["gameId", "playId"], inplace=True)
             defense_data.to_csv(defense_file_path, index=False)
@@ -2382,7 +2374,7 @@ class PlayGroundSimulatorDataProcessor:
         logger.info("Combining all PlayGround Simulator Offense Data")
         # Combine all offense data into one file
         combined_offense_data = pd.concat(offense_dfs, ignore_index=True).drop_duplicates(subset=["gameId", "playId"])
-        combined_offense_file = os.path.join(self.output_folder, "all_offense_data.csv")
+        combined_offense_file = self.output_folder / "all_offense_data.csv"
         combined_offense_data.to_csv(combined_offense_file, index=False)
         logger.info("Combined all PlayGround Simulator Offense Data")
 
@@ -2390,15 +2382,15 @@ class PlayGroundSimulatorDataProcessor:
         logger.info("Combining all PlayGround Simulator Defense Data")
         # Combine all defense data into one file
         combined_defense_data = pd.concat(defense_dfs, ignore_index=True).drop_duplicates(subset=["gameId", "playId"])
-        combined_defense_file = os.path.join(self.output_folder, "all_defense_data.csv")
+        combined_defense_file = self.output_folder / "all_defense_data.csv"
         combined_defense_data.to_csv(combined_defense_file, index=False)
         logger.info("Combined all PlayGround Simulator Defense Data")
 
 
-        logger.info("Combining all PlayGround Simulator Offense & Defense Data in to a Single File")
+        logger.info("Combining all PlayGround Simulator Offense & Defense Data into a Single File")
         # Combine all offense and defense data into a single file
         combined_all_data = pd.concat([combined_offense_data, combined_defense_data], ignore_index=True).drop_duplicates(subset=["gameId", "playId"])
-        combined_all_file = os.path.join(self.output_folder, "all_playground_data.csv")
+        combined_all_file = self.output_folder / "all_playground_data.csv"
         combined_all_data.to_csv(combined_all_file, index=False)
         logger.info(f"All files processed and stored in {self.output_folder}")
 

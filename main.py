@@ -1,3 +1,4 @@
+from pathlib import Path
 from utils.helpers import *
 from data_visualization.game_visualizer import GameVisualizer
 from data_visualization.plotly_game_visualizer import PlotlyGameVisualizer
@@ -35,13 +36,13 @@ class NFLProcessor:
         ]  
         
 
-        self.route_analyzer_base_path = "assets/offense-data"
-        self.offense_player_rating_base_path = "assets/offense-data"
-        self.defense_player_rating_base_path = "assets/defense-data"
-        self.qb_radar_base_path = "assets/qb_radar"
-        os.makedirs(self.qb_radar_base_path, exist_ok=True)
-        self.player_ratings_base_path = "assets/player_ratings"
-        os.makedirs(self.player_ratings_base_path, exist_ok=True)
+        self.route_analyzer_base_path = Path("assets/offense-data")
+        self.offense_player_rating_base_path = Path("assets/offense-data")
+        self.defense_player_rating_base_path = Path("assets/defense-data")
+        self.qb_radar_base_path = Path("assets/qb_radar")
+        self.player_ratings_base_path = Path("assets/player_ratings")
+        self.qb_radar_base_path.mkdir(parents=True, exist_ok=True)
+        self.player_ratings_base_path.mkdir(parents=True, exist_ok=True)
 
     def process_teams(self):
         """Process data for each team and print summaries."""
@@ -122,7 +123,7 @@ class NFLProcessor:
 
     def process_qb_radar(self):
         """Process QB radar data for each team, saving individual and combined files."""
-        base_file_path = "assets/offense-data/{team_name}/{team_name}_full_data.csv"
+        base_file_path = Path("assets/offense-data/{team_name}/{team_name}_full_data.csv")
         QBRadarProcessor.process_qb_radar_for_teams(
             team_names=self.team_names,
             base_file_path=base_file_path,
@@ -168,15 +169,21 @@ class NFLProcessor:
 # Main
 if __name__ == "__main__":
     processor = NFLProcessor()
-    processor.process_teams()
-    processor.process_qb_radar()
-    processor.process_player_ratings()
-    processor.process_play_ground_simulator_data()
+    # processor.process_teams()
+    # processor.process_qb_radar()
+    # processor.process_player_ratings()
+    # processor.process_play_ground_simulator_data()
 
         
     # Example of visualizing a specific game play
-    game_id = 2022092510
-    play_id = 3999
+    game_id = 2022110606
+    play_id = 1531
 
-    pitch_image_path = '/Users/kushtrivedi/Desktop/nfl-big-data-bowl-2025/assets/vertical_pitch.png'
+    # create random pitch wil be updated when gameplay will be called
+    pitch = NFLFieldVertical(width=53.3, height=120,home_team="ARI", home_team_color="#97233F", visitor_team="KC", visitor_team_color="#97233F")
+    pitch.save_pitch(
+        folder_path='assets', filename='vertical_pitch.png'
+    )
+
+    pitch_image_path = Path("assets/vertical_pitch.png")
     processor.visualize_game_play(game_id, play_id, pitch_image_path)
