@@ -1354,9 +1354,10 @@ class QBRadarProcessor:
         all_team_data = []
         output_base_path = Path(output_base_path)
         output_base_path.mkdir(parents=True, exist_ok=True)
+        base_file_path = Path(base_file_path)
 
         for team_name in team_names:
-            team_file_path = Path(base_file_path.format(team_name=team_name))
+            team_file_path = base_file_path / f"{team_name}.csv"
             output_file_path = output_base_path / f"{team_name}_qb_radar.csv"
 
             try:
