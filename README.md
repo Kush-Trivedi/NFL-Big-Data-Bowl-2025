@@ -5,7 +5,7 @@
   - Git Bash
  
 
-## Mac OS Setup
+## Mac OS Setup (Preferred OS)
 
 ### Step 1: Clone Repository
 
