@@ -58,12 +58,12 @@ class NFLDataLoader:
     def downcast_memory_usage(self, df, df_name, verbose=True):
         """
         Reduces the memory usage of a DataFrame by downcasting numerical columns.
-        
+
         Parameters:
             df (pd.DataFrame): The DataFrame to downcast.
             df_name (str): Name of the DataFrame for logging purposes.
             verbose (bool): Whether to log the compression percentage.
-        
+
         Returns:
             pd.DataFrame: The downcasted DataFrame.
         """
@@ -73,6 +73,7 @@ class NFLDataLoader:
 
             for col in df.columns:
                 dtype_name = df[col].dtype.name
+
                 if dtype_name == 'object':
                     logger.debug(f"Column '{col}' is of type object; skipping downcast.")
                     continue
@@ -80,15 +81,39 @@ class NFLDataLoader:
                     df[col] = df[col].astype('int8')
                     logger.debug(f"Column '{col}' downcasted to int8.")
                 elif dtype_name.startswith('int'):
-                    if df[col].max() > 2**31 - 1 or df[col].min() < -(2**31):
-                        logger.debug(f"Column '{col}' preserved as int64 due to large values.")
+                    # Check for nulls, as they require special handling
+                    if df[col].isnull().any():
+                        logger.debug(f"Column '{col}' contains NaN values; skipping downcast.")
                         continue
-                    df[col] = pd.to_numeric(df[col], downcast='integer')
-                    logger.debug(f"Column '{col}' downcasted to integer.")
+                    
+                    # Handle platform-specific differences
+                    try:
+                        # Only downcast if the values fit within the target range
+                        if df[col].max() > 2*31 - 1 or df[col].min() < -(2*31):
+                            logger.debug(f"Column '{col}' preserved as int64 due to large values.")
+                            continue
+                        
+                        # Downcast to the smallest integer type possible
+                        df[col] = pd.to_numeric(df[col], downcast='integer')
+                        logger.debug(f"Column '{col}' downcasted to integer.")
+                    except Exception as e:
+                        logger.warning(f"Error downcasting column '{col}': {e}")
+                        continue
                 elif dtype_name.startswith('float'):
-                    df[col] = pd.to_numeric(df[col], downcast='float')
-                    logger.debug(f"Column '{col}' downcasted to float.")
+                    try:
+                        # Only downcast if the column does not contain nulls
+                        if df[col].isnull().any():
+                            logger.debug(f"Column '{col}' contains NaN values; skipping downcast.")
+                            continue
+                        
+                        # Downcast to the smallest float type possible
+                        df[col] = pd.to_numeric(df[col], downcast='float')
+                        logger.debug(f"Column '{col}' downcasted to float.")
+                    except Exception as e:
+                        logger.warning(f"Error downcasting column '{col}': {e}")
+                        continue
 
+            # Log memory usage after downcasting
             end_mem = df.memory_usage().sum() / 1024**2
             compression = 100 * (start_mem - end_mem) / start_mem
             if verbose:
