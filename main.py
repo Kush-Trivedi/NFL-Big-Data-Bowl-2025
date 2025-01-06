@@ -169,10 +169,10 @@ class NFLProcessor:
 # Main
 if __name__ == "__main__":
     processor = NFLProcessor()
-    # processor.process_teams()
-    # processor.process_qb_radar()
-    # processor.process_player_ratings()
-    # processor.process_play_ground_simulator_data()
+    processor.process_teams()
+    processor.process_qb_radar()
+    processor.process_player_ratings()
+    processor.process_play_ground_simulator_data()
 
         
     # Example of visualizing a specific game play
