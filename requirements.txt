@@ -12,3 +12,4 @@ xhtml2pdf
 joypy
 imageio
 plotly
+imageio[ffmpeg] # Only for windows, use brew for mac
